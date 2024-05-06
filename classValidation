@@ -1,0 +1,152 @@
+import requests
+from bs4 import BeautifulSoup
+import json
+import re
+import time
+import random
+from urllib.parse import urljoin
+
+requests.packages.urllib3.disable_warnings()
+
+
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.150 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.150 Safari/537.36",
+
+]
+
+def extract_product_urls(base_url):
+    product_urls = []
+
+    try:
+        response = requests.get(base_url, headers={'User-Agent': random.choice(USER_AGENTS)}, verify=False)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        product_links = soup.find_all('a', href=True)
+        for link in product_links:
+            href = link.get('href')
+            if href and href.startswith('/products/'):
+                product_urls.append(urljoin(base_url, href))
+
+    except requests.RequestException as e:
+        print(f"Error fetching product URLs: {e}")
+
+    return product_urls
+
+def scrape_product_details(url):
+    product_details_list = []
+
+    try:
+        response = requests.get(url, headers={'User-Agent': random.choice(USER_AGENTS)}, verify=False)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        variants = soup.find_all('select', id='product-select-1')
+        if variants:
+            for option in variants[0].find_all('option'):
+                variant_id = option['value']
+                if variant_id:
+                    variant_url = f"{url}?variant={variant_id}"
+                    variant_details = extract_variant_details(variant_url)
+                    if variant_details:
+                        product_details_list.append(variant_details)
+
+        if not product_details_list:
+    
+            product_details = extract_details_from_soup(soup, url)
+            if product_details:
+                product_details_list.append(product_details)
+
+        subpage_links = soup.find_all('a', href=True)
+        for link in subpage_links:
+            subpage_url = urljoin(url, link['href'])
+            if subpage_url != url:
+                time.sleep(random.uniform(1, 3))  # Add a delay between requests
+                subpage_details = scrape_product_details(subpage_url)
+                product_details_list.extend(subpage_details)
+
+    except requests.RequestException as e:
+        print(f"Error scraping product details for {url}: {e}")
+
+    return product_details_list
+
+def extract_variant_details(url):
+    try:
+        response = requests.get(url, headers={'User-Agent': random.choice(USER_AGENTS)}, verify=False)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, 'html.parser')
+        return extract_details_from_soup(soup, url)
+    except requests.RequestException as e:
+        print(f"Error scraping variant details for {url}: {e}")
+
+def extract_details_from_soup(soup, url):
+    product_details = {}
+
+    try:
+        product_details['brand'] = extract_tag_content(soup, 'meta', property='og:site_name')
+        product_details['description'] = extract_tag_content(soup, 'meta', property='og:description')
+        product_details['image'] = extract_tag_content(soup, 'meta', property='og:image')
+        product_details['images'] = extract_multiple_tags_content(soup, 'meta', property='og:image')
+        product_details['price'] = extract_price(soup)
+        product_details['prices'] = extract_multiple_prices(soup)
+        product_details['sale_prices'] = extract_multiple_sale_prices(soup)
+        product_details['title'] = extract_tag_content(soup, 'meta', property='og:title')
+        product_details['url'] = url
+        product_details['product_id'] = url.split('/')[-1]
+
+    except Exception as e:
+        print(f"Error extracting details from soup for {url}: {e}")
+
+    return product_details
+
+def extract_tag_content(soup, tag, **kwargs):
+    tag_content = soup.find(tag, **kwargs)
+    return tag_content['content'].strip() if tag_content else None
+
+def extract_multiple_tags_content(soup, tag, **kwargs):
+    tags_content = soup.find_all(tag, **kwargs)
+    return [tag['content'].strip() for tag in tags_content]
+
+def extract_price(soup):
+    price_tags = soup.find_all('span', string=re.compile(r'\$'))
+    for tag in price_tags:
+        price_text = tag.text.strip()
+        if '$' in price_text:
+            return price_text
+    return None
+
+def extract_multiple_prices(soup):
+    prices = []
+  
+    price_tags = soup.find_all('span', string=re.compile(r'\$'))
+    for tag in price_tags:
+        price_text = tag.text.strip()
+        if '$' in price_text:
+            prices.append(price_text)
+    return prices
+
+def extract_multiple_sale_prices(soup):
+    sale_prices = []
+  
+    sale_price_tags = soup.find_all('span', string=re.compile(r'\$'))
+    for tag in sale_price_tags:
+        sale_price_text = tag.text.strip()
+        if '$' in sale_price_text:
+            sale_prices.append(sale_price_text)
+    return sale_prices
+
+def main():
+    base_url = "https://foreignfortune.com"
+    product_urls = extract_product_urls(base_url)
+    all_product_details = []
+
+    for url in product_urls:
+        product_details_list = scrape_product_details(url)
+        all_product_details.extend(product_details_list)
+
+    print(json.dumps(all_product_details, indent=2))
+
+if __name__ == "__main__":
+    main()
