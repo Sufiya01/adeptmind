@@ -1,0 +1,46 @@
+class Validation:
+    @staticmethod
+    def validate_price(sale_price, original_price):
+        """
+        Validate if the sale price is less than or equal to the original price.
+        """
+        if sale_price is not None and original_price is not None:
+            return float(sale_price) <= float(original_price)
+        return False
+
+    @staticmethod
+    def validate_mandatory_fields(product_data):
+        """
+        Validate if mandatory fields like title, product_id, and model_id are present.
+        """
+        mandatory_fields = ['title', 'product_id', 'model_id']
+        for field in mandatory_fields:
+            if field not in product_data or not product_data[field]:
+                return False
+        return True
+
+    @staticmethod
+    def validate_images_and_prices(product_data):
+        """
+        Validate if each variant (model) has images and their respective prices.
+        """
+        if 'variants' in product_data:
+            for variant in product_data['variants']:
+                if 'images' not in variant or not variant['images']:
+                    return False
+                if 'price' not in variant or not variant['price']:
+                    return False
+        return True
+
+
+from validation import Validation
+
+for product in all_product_details:
+    if not Validation.validate_price(product.get('sale_price'), product.get('price')):
+        print(f"Validation Error: Sale price is not less than or equal to original price for {product['title']}")
+
+    if not Validation.validate_mandatory_fields(product):
+        print(f"Validation Error: Mandatory fields are missing for {product['title']}")
+
+    if not Validation.validate_images_and_prices(product):
+        print(f"Validation Error: Images or prices are missing for variants of {product['title']}")
